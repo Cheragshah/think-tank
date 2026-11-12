@@ -25,7 +25,7 @@ Those seven are the **default board**. Five more advisors are on call, and the C
 | Sara Blakely | Consumer product and brand from zero | Will customers love it enough to sell it for you, without outside money? |
 | Elon Musk | First principles and execution speed | What is the real constraint here, and can we cut steps and build it faster? |
 
-Seven new seats are installed on call and appear in the picker. They are **provisional** while their full source-backed brains build:
+Seven new seats are installed on call and appear in the picker. **Modi's full source-backed brain is built.** The other six are **provisional** while their builds finish:
 
 | Seat | Pillar | The question they own |
 |---|---|---|
@@ -37,7 +37,7 @@ Seven new seats are installed on call and appear in the picker. They are **provi
 | Joe Dispenza | Mindset, identity, and behavior change | What identity and belief is driving this, and how do you change it? |
 | John Demartini | Values, human behavior, and decision-making | What does your value hierarchy say, and what are you not seeing? |
 
-The picker marks each provisional seat **building**. A standard-depth build is running in the background and replaces the provisional brain, agent, and roster entry when it finishes. Reload the room after a build completes to see the finished seat.
+The picker marks each unfinished seat **building**. A standard-depth build runs in the background and replaces the provisional brain, agent, and roster entry when it finishes. Reload the room after a build completes to see the finished seat.
 
 New leaders get a **real photo avatar** automatically. The room looks for a public photo on Wikipedia/Wikimedia, crops it into a square avatar, and shows the actual person instead of a drawn placeholder. If Wikipedia has no photo, the deep build finds an official photo during the portrait step. Add `KIE_AI_API_KEY` if you want the original cartoon treatment. The photo sources are listed in `app/public/portraits/CREDITS.md`.
 
