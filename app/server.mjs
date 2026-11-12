@@ -11,7 +11,7 @@ import * as chat from "./lib/opencode.mjs";
 import * as leaderBuilds from "./lib/leader-builds.mjs";
 
 const PORT = Number(process.env.PORT) || 4730;
-const HOST = process.env.HOST || (process.env.RENDER ? "0.0.0.0" : "127.0.0.1");
+const HOST = process.env.HOST || (process.env.RENDER || process.env.PORT ? "0.0.0.0" : "127.0.0.1");
 const APP_PASSWORD = process.env.APP_PASSWORD || env("APP_PASSWORD") || "";
 const APP_USER = process.env.APP_USER || env("APP_USER") || "think-tank";
 const PUBLIC = path.join(APP_ROOT, "public");
