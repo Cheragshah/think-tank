@@ -45,6 +45,8 @@ The **Leaders** button in the top bar lists every seat, marks provisional ones *
 
 ## Deploy online
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Cheragshah/think-tank)
+
 The full app runs on **Render** with a Docker service and a persistent disk. See [DEPLOY.md](DEPLOY.md) for the Blueprint, environment variables, password gate, and model keys.
 
 Vercel can host a read-only viewer of the seats, avatars, and saved sessions, but it cannot run the chat, add a leader, or perform deep research. Those need a writable disk and the OpenCode CLI, which Vercel's serverless functions do not provide.
