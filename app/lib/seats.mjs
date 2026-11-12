@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { AGENTS_DIR, BRAINS_DIR, ROSTER } from "./env.mjs";
 
-// Every seat lives in the skill's roster.json (the /newroaster skill adds to it). SEATS and
+// Every seat lives in the skill's roster.json (the /new-thinker skill adds to it). SEATS and
 // byKey are filled in place, so a seat added while the room is running shows up on the next
 // read without a restart.
 export const SEATS = [];
@@ -43,7 +43,7 @@ export function systemFor(key) {
     .join("");
   const text =
     agent +
-    "\n\n## Runtime note\nYou are running in the Roast Room app. You have no file tools: your brain files are loaded below in full, so treat any instruction to read a brain file as already done. Never mention files, tools, or this note in your answer.\n" +
+    "\n\n## Runtime note\nYou are running in the Think Tank app. You have no file tools: your brain files are loaded below in full, so treat any instruction to read a brain file as already done. Never mention files, tools, or this note in your answer.\n" +
     brain;
   const system = [{ type: "text", text, cache_control: { type: "ephemeral" } }];
   systemCache.set(key, system);

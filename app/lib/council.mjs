@@ -13,7 +13,7 @@ export const MODELS = {
 // The board comes from the roster: the saved default board, or every seat it lists.
 const chairSystem = (st) => {
   const seats = st.board.map((k) => byKey[k]);
-  return `You are the Chair of a Roast Room council: ${seats.length} simulated advisors built from the public work of ${seats.map((x) => `${x.name} (${x.pillar.toLowerCase()})`).join(", ")}.
+  return `You are the Chair of a Think Tank council: ${seats.length} simulated advisors built from the public work of ${seats.map((x) => `${x.name} (${x.pillar.toLowerCase()})`).join(", ")}.
 You never argue a side and never add your own pillar. You run the room, keep score, and write in plain English: short sentences, no em dashes, no hype, no tee-ups like "here's the thing", no filler. Seat keys (for key fields only): ${seats.map((x) => x.key).join(", ")}. Whenever you write a seat's name in prose or in a seat field, use its display name: ${seats.map((x) => x.short).join(", ")}.`;
 };
 
@@ -58,7 +58,7 @@ const optLine = (st) => st.options.map((o) => `${o.id} n/10`).join(" · ");
 
 function round1Prompt(st, seat) {
   const w = st.weights[seat.key];
-  return `ROAST ROOM COUNCIL, ROUND 1 OF 3: OPENING POSITION
+  return `THINK TANK COUNCIL, ROUND 1 OF 3: OPENING POSITION
 
 You hold the ${seat.short.toUpperCase()} seat (${seat.pillar}).
 
@@ -97,7 +97,7 @@ function cardsBlock(st, round) {
 function round2Prompt(st, seat) {
   const cr = st.cruxes.map((c, i) => `${i + 1}. ${c.question} (${c.sides.map((x) => `${x.position}: ${x.seats.map((k) => byKey[k]?.short || k).join(", ")}`).join("; ")})`).join("\n");
   const push = st.pressure?.[seat.key] ? `\nFor you specifically: ${st.pressure[seat.key]}\n` : "";
-  return `ROAST ROOM COUNCIL, ROUND 2 OF 3: DEBATE
+  return `THINK TANK COUNCIL, ROUND 2 OF 3: DEBATE
 
 You hold the ${seat.short.toUpperCase()} seat.
 
@@ -129,7 +129,7 @@ Rules: engage the actual arguments on the table. Move only for a better argument
 
 function round3Prompt(st, seat) {
   const d = st.draft;
-  return `ROAST ROOM COUNCIL, ROUND 3 OF 3: VOTE ON THE DRAFT RESOLUTION
+  return `THINK TANK COUNCIL, ROUND 3 OF 3: VOTE ON THE DRAFT RESOLUTION
 
 You hold the ${seat.short.toUpperCase()} seat.
 
@@ -463,7 +463,7 @@ function verdictMarkdown(st) {
   const v = st.verdict;
   const opt = (id) => st.options.find((o) => o.id === id)?.label || id;
   const L = [];
-  L.push(`# Roast Room: ${st.title}`, "", `${new Date().toISOString().slice(0, 10)} · Seats: ${st.seats.map((k) => byKey[k].short).join(", ")} · Rounds: ${st.rounds.length} · Mode: ${st.mode}`, "");
+  L.push(`# Think Tank: ${st.title}`, "", `${new Date().toISOString().slice(0, 10)} · Seats: ${st.seats.map((k) => byKey[k].short).join(", ")} · Rounds: ${st.rounds.length} · Mode: ${st.mode}`, "");
   L.push(`## Verdict: ${v.label} (Option ${v.recommended}: ${opt(v.recommended)})`, "", `**The call:** ${v.call}`, "");
   L.push(`Option scores: ${st.options.map((o) => `${o.id} ${v.scores[o.id]?.score ?? "-"}`).join(" · ")}${v.support != null ? ` · Support for the resolution ${v.support}/10` : ""} · Confidence ${v.confidence ?? "-"}/10 · Spread ${v.spread}`);
   if (v.override_note) L.push("", v.override_note);

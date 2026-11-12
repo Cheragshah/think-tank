@@ -17,10 +17,11 @@ const EXAMPLE = "I run a coaching business at $30k a month with 15 clients at $2
 const GUIDE = `
   <div class="guide">
     <div class="guide-sec">
-      <h4>How to use the Roast Room</h4>
+      <h4>How to use the Think Tank</h4>
       <ol>
-        <li><span>Open Claude Code in this folder.</span></li>
-        <li><span>Type <code>/roast-room</code> and your decision.</span></li>
+        <li><span>Open Claude Code or OpenCode in this folder.</span></li>
+        <li><span>Type <code>/think-tank</code> (Claude Code) or <code>@think-tank</code> (OpenCode) and your decision.</span></li>
+        <li><span>Or click <b>Chat with the Chair</b> in the room and type your decision there. It picks the recommended board and states assumptions, then runs the council.</span></li>
         <li><span>Pick your advisors (the Chair recommends a board) and answer its questions. Then watch the council argue it out here.</span></li>
         <li><span>When the verdict lands, download it as a PDF.</span></li>
       </ol>
@@ -40,7 +41,7 @@ const GUIDE = `
     <div class="guide-sec">
       <h4>Example</h4>
       <div class="example">
-        <p><code>/roast-room</code> ${EXAMPLE.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</p>
+        <p><code>/think-tank</code> ${EXAMPLE.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</p>
         <button class="ghost" type="button" data-copy-example>Copy this example</button>
       </div>
     </div>
@@ -51,13 +52,13 @@ const GUIDE = `
         <li><span><b>Full council:</b> 5 to 7 advisors, 3 rounds. For big calls that are hard to undo.</span></li>
         <li><span><b>Quick:</b> add <code>--quick</code> for 4 advisors and 2 rounds. Uses far less of your plan.</span></li>
         <li><span><b>Every council is saved.</b> Open Past sessions to replay one or download its PDF.</span></li>
-        <li><span><b>Add an advisor:</b> type <code>/newroaster</code> and a name. Change your default board with <code>/roast-room board</code>.</span></li>
+        <li><span><b>Add an advisor:</b> type <code>/new-thinker</code> or <code>@new-thinker</code> and a name. Change your default board with <code>board</code>.</span></li>
       </ul>
     </div>
   </div>`;
 
 const SHAPES = ["base", "open", "mid", "blink"];
-// A seat's cartoon frames live in /portraits/<key>-<shape>.webp (or .png, .jpg). A seat added with /newroaster
+// A seat's cartoon frames live in /portraits/<key>-<shape>.webp (or .png, .jpg). A seat added with /new-thinker
 // may have only a base frame, or none: missing frames fall back to the base frame, then to a
 // drawn bust in the seat's color whose mouth and eyes still move.
 const portrait = (key, shape = "base") => {
@@ -69,7 +70,7 @@ function drawnBust(key, shape) {
   const id = `${key}-${shape}`;
   if (bustCache.has(id)) return bustCache.get(id);
   const s = state.byKey[key] || {};
-  const c = /^#[0-9a-f]{6}$/i.test(s.color || "") ? s.color : "#37bdf8";
+  const c = /^#[0-9a-f]{6}$/i.test(s.color || "") ? s.color : "#D6FF3F";
   const initials = esc((s.initials || s.short || key).slice(0, 3).toUpperCase());
   const eyes = shape === "blink"
     ? `<path d="M226 250h30M304 250h30" stroke="#1d2733" stroke-width="7" stroke-linecap="round"/>`
@@ -94,13 +95,15 @@ const ROUND_NAME = ["", "Opening", "Debate", "Vote"];
 
 const state = {
   seats: [], byKey: {}, board: [], table: [], session: null, options: [], weights: {}, active: [], round: 0,
-  cards: { 1: {}, 2: {}, 3: {} }, replaying: false, verdict: null, links: [], geo: {}, setup: null, wait: null,
+  cards: { 1: {}, 2: {}, 3: {} }, replaying: false, verdict: null, links: [], geo: {}, setup: null, wait: null, jobs: {},
 };
 
 // ------------------------------------------------------------- boot
 async function boot() {
   const r = await refreshSeats();
   state.runner = r.runner;
+  chatConfigure(r);
+  if (r.runner === "opencode") connectChat();
   if (r.runner === "api" && !r.hasKey) toast("No ANTHROPIC_API_KEY found in .env. Add it and restart the server.");
   renderSeats(state.board);
   renderSamples();
@@ -116,6 +119,7 @@ async function boot() {
   refreshUsage();
   setInterval(watchForLive, 2500);
   setInterval(tickWait, 1000);
+  setInterval(refreshLeaders, 15000);
 }
 
 // The roster (every seat, plus the default board) comes from the skill's roster.json.
@@ -123,10 +127,21 @@ async function refreshSeats() {
   const r = await fetch("/api/seats").then((x) => x.json());
   state.seats = r.seats;
   state.byKey = Object.fromEntries(r.seats.map((s) => [s.key, s]));
+  state.jobs = r.jobs || {};
   state.board = (r.board?.default || []).filter((k) => state.byKey[k]);
   if (!state.board.length) state.board = r.seats.slice(0, 7).map((s) => s.key);
   bustCache.clear();
   return r;
+}
+
+// Poll the leader list so building tags and newly finished seats update without a reload.
+async function refreshLeaders() {
+  if (state.runner !== "opencode") return;
+  const before = JSON.stringify({ n: state.seats.length, p: state.seats.map((s) => Boolean(s.provisional)), j: state.jobs });
+  const r = await refreshSeats().catch(() => null);
+  if (!r) return;
+  const after = JSON.stringify({ n: state.seats.length, p: state.seats.map((s) => Boolean(s.provisional)), j: state.jobs });
+  if (before !== after) buildSeatPicker();
 }
 
 // a council started in Claude Code shows up here on its own
@@ -258,15 +273,47 @@ function bindUI() {
   $("#guideBtn").addEventListener("click", openGuide);
   document.addEventListener("click", async (e) => {
     if (e.target.closest("[data-copy-example]")) {
-      try { await navigator.clipboard.writeText("/roast-room " + EXAMPLE); toast("Copied. Paste it into Claude Code."); }
+      try { await navigator.clipboard.writeText("/think-tank " + EXAMPLE); toast("Copied. Paste it into Claude Code or OpenCode."); }
       catch { toast("Copy didn't work here. Select the text and copy it."); }
     }
     if (e.target.closest("[data-pdf]")) savePdf(e.target.closest("[data-pdf]"));
   });
   $("#historyBtn").addEventListener("click", openHistory);
-  $("#newBtn").addEventListener("click", reset);
+  $("#newBtn").addEventListener("click", async () => {
+    if (state.runner === "opencode") { await newChat(); openChat(); }
+    else reset();
+  });
+  $("#chatBtn").addEventListener("click", openChat);
+  $("#waitChat").addEventListener("click", openChat);
+  $("#chatForm").addEventListener("submit", sendChat);
+  $("#chatStop").addEventListener("click", stopChat);
+  $("#chatNew").addEventListener("click", newChat);
+  $("#chatWatch").addEventListener("click", () => $("#chatDialog").close());
+  $("#chatSeatBtn").addEventListener("click", openSeats);
+  $("#chatSeatDone").addEventListener("click", () => $("#seatsDialog").close());
+  $("#chatSeatClear").addEventListener("click", clearSeats);
+  $("#chatAddAdvisor").addEventListener("click", openAdvisor);
+  $("#leadersBtn").addEventListener("click", toggleLeaders);
+  $("#leadersUse").addEventListener("click", () => { $("#leadersMenu").hidden = true; openChat(); });
+  $("#leaderAddForm").addEventListener("submit", addLeader);
+  $("#chatSeatAll").addEventListener("change", onAllChange);
+  $("#leadersAll").addEventListener("change", onAllChange);
+  $("#advisorForm").addEventListener("submit", buildAdvisor);
+  $("#advisorCancel").addEventListener("click", () => $("#advisorDialog").close());
+  $("#chatInput").addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      $("#chatForm").requestSubmit();
+    }
+  });
   $("#verdictSheet").addEventListener("click", (e) => { if (e.target.id === "verdictSheet" || e.target.closest("[data-close]")) $("#verdictSheet").hidden = true; });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("#verdictSheet").hidden = true; });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { $("#verdictSheet").hidden = true; $("#leadersMenu").hidden = true; } });
+  document.addEventListener("click", (e) => {
+    const menu = $("#leadersMenu");
+    if (menu.hidden) return;
+    if (e.target.closest("#leadersMenu") || e.target.closest("#leadersBtn")) return;
+    menu.hidden = true;
+  });
   // Clicking the dimmed backdrop around a card, the guide, or past sessions closes it (Escape already does).
   // Both press and release must land outside the box, so a text selection dragged out of it never closes it.
   $$("dialog.card-dialog").forEach((d) => {
@@ -327,6 +374,8 @@ function reset() {
   $("#topic").hidden = true;
   $("#composer").hidden = state.runner !== "api";
   $("#waiting").hidden = state.runner === "api";
+  $("#chatBtn").hidden = state.runner !== "opencode";
+  $("#waitChat").hidden = state.runner !== "opencode";
   $("#caption").hidden = true;
   $("#cruxes").hidden = true;
   $("#plate").hidden = true;
@@ -509,7 +558,7 @@ function captionFor(who) {
   c.style.animation = "none"; void c.offsetWidth; c.style.animation = "";
   const s = state.byKey[who];
   $("#capAv").className = `cap-av${s ? "" : " chair"}`;
-  $("#capAv").innerHTML = `<img src="${s ? portrait(who) : "/brand/ais-symbol.png"}" alt="">`;
+  $("#capAv").innerHTML = `<img src="${s ? portrait(who) : "/brand/think-tank-symbol.svg"}" alt="">`;
   $("#capWho").textContent = s ? s.name : "The Chair";
 }
 
@@ -900,6 +949,470 @@ async function savePdf(btn) {
     btn.disabled = false;
     btn.textContent = old;
   }
+}
+
+// ------------------------------------------------------------- chat with the Chair
+const chat = { es: null, state: { messages: [], running: false }, currentAssistant: null };
+
+function chatConfigure(r) {
+  const on = r.runner === "opencode";
+  $("#chatBtn").hidden = !on;
+  $("#waitChat").hidden = !on;
+  const addForm = $("#leaderAddForm");
+  if (addForm) addForm.hidden = !on;
+  const useBtn = $("#leadersUse");
+  if (useBtn) useBtn.hidden = !on;
+  if (!on) return;
+  const copy = $("#waiting p");
+  if (copy) copy.textContent = "Type a decision here. The Chair convenes the council and it plays live around the table.";
+  const code = $("#waiting code");
+  if (code) code.hidden = true;
+  fillModels(r.chatModels || []);
+  buildSeatPicker();
+}
+
+const selection = { keys: new Set(), all: false };
+
+function seatChoice(s, scope) {
+  const label = document.createElement("label");
+  label.className = scope === "nav" ? "leader-item" : "chat-seat";
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.value = s.key;
+  box.dataset.seatKey = s.key;
+  box.addEventListener("change", (e) => {
+    if (e.target.checked) {
+      selection.all = false;
+      selection.keys.add(s.key);
+    } else {
+      selection.keys.delete(s.key);
+    }
+    renderSelection();
+  });
+  const avatar = document.createElement("img");
+  avatar.className = "leader-av";
+  avatar.alt = "";
+  avatar.src = s.portraits?.base || "/brand/think-tank-symbol.svg";
+  const text = document.createElement("span");
+  if (scope === "nav") text.className = "leader-copy";
+  const inline = scope === "dialog" && s.provisional ? ' <em class="build-tag">building</em>' : "";
+  text.innerHTML = `<b>${esc(s.short)}${inline}</b><small>${esc(s.pillar)}</small>`;
+  label.append(box, avatar, text);
+  if (scope === "nav") {
+    const job = state.jobs?.[s.key];
+    const st = s.provisional
+      ? (job?.state === "running" ? "building" : job?.state === "queued" ? "queued" : job?.state === "error" ? "failed" : "building")
+      : "";
+    if (st) {
+      const tag = document.createElement("span");
+      tag.className = "leader-tag " + st;
+      tag.textContent = st;
+      label.append(tag);
+    }
+  }
+  return label;
+}
+
+function buildSeatPicker() {
+  const grid = $("#chatSeatGrid");
+  const nav = $("#leadersGrid");
+  if (!grid || !nav) return;
+  grid.innerHTML = "";
+  nav.innerHTML = "";
+  for (const s of state.seats) {
+    grid.append(seatChoice(s, "dialog"));
+    nav.append(seatChoice(s, "nav"));
+  }
+  renderSelection();
+}
+
+function selectedSeats() {
+  return [...selection.keys];
+}
+
+function onAllChange(e) {
+  selection.all = e.target.checked;
+  if (selection.all) selection.keys.clear();
+  renderSelection();
+}
+
+function renderSelection() {
+  const locked = Boolean(chat.state.running || chat.state.sessionId);
+  const boxes = [...document.querySelectorAll("#chatSeatGrid input, #leadersGrid input")];
+  for (const box of boxes) {
+    const on = selection.all || selection.keys.has(box.value);
+    box.checked = on;
+    box.disabled = locked || selection.all || (!on && selection.keys.size >= 9);
+  }
+  for (const id of ["chatSeatAll", "leadersAll"]) {
+    const box = document.getElementById(id);
+    if (box) { box.checked = selection.all; box.disabled = locked; }
+  }
+  const picked = [...selection.keys].map((k) => state.byKey[k]?.short || k);
+  const btn = $("#chatSeatBtn");
+  if (btn) {
+    btn.disabled = locked;
+    btn.classList.toggle("locked", locked);
+    btn.classList.toggle("has-picks", selection.all || picked.length > 0);
+  }
+  const count = $("#chatSeatCount");
+  if (count) {
+    if (locked) count.textContent = "Fixed";
+    else if (selection.all) count.textContent = "Everyone";
+    else if (picked.length) count.textContent = `${picked.length} selected`;
+    else count.textContent = "Recommended";
+  }
+  const hint = $("#chatSeatHint");
+  if (hint) hint.textContent = locked
+    ? "Start a new question to change the leaders."
+    : selection.all
+      ? "Everyone with a seat, up to nine."
+      : picked.length
+        ? picked.slice(0, 6).join(", ") + (picked.length > 6 ? "…" : "")
+        : "The Chair recommends a board for the topic.";
+  const leadersCount = $("#leadersCount");
+  if (leadersCount) leadersCount.textContent = String(state.seats.length || 0);
+  const summary = $("#leadersSummary");
+  if (summary) summary.textContent = locked
+    ? `${state.seats.length} available · fixed for this conversation`
+    : `${state.seats.length} available${selection.all ? " · everyone selected" : picked.length ? ` · ${picked.length} selected` : ""}`;
+  const leadersBtn = $("#leadersBtn");
+  if (leadersBtn) leadersBtn.classList.toggle("has-picks", selection.all || picked.length > 0);
+}
+
+function openSeats() {
+  if (chat.state.running || chat.state.sessionId) return toast("Start a new question to change the leaders.");
+  const d = $("#seatsDialog");
+  if (!d.open) d.showModal();
+}
+
+function toggleLeaders(e) {
+  e?.stopPropagation();
+  const menu = $("#leadersMenu");
+  const opening = menu.hidden;
+  menu.hidden = !opening;
+  if (opening) renderSelection();
+}
+
+async function addLeader(e) {
+  e.preventDefault();
+  const name = $("#leaderName").value.trim();
+  if (!name) return;
+  const btn = $("#leaderAddBtn");
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Researching...";
+  try {
+    const r = await fetch("/api/leaders", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      toast(j.error || "Could not add that leader.");
+      return;
+    }
+    $("#leaderName").value = "";
+    if (j.seat?.key) {
+      selection.keys.add(j.seat.key);
+      selection.all = false;
+    }
+    const avatar = j.avatar ? "Photo avatar ready." : "Avatar will be added by the deep build.";
+    toast(j.built ? `${j.seat.name} is already built.` : `${j.seat.name} added. ${avatar} Deep research queued.`);
+    await refreshSeats();
+    buildSeatPicker();
+    $("#leadersGrid").lastElementChild?.scrollIntoView({ block: "nearest" });
+  } catch (err) {
+    toast("Could not add that leader: " + (err.message || err));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
+function clearSeats() {
+  if (chat.state.running || chat.state.sessionId) return toast("Start a new question to change the leaders.");
+  selection.keys.clear();
+  selection.all = false;
+  renderSelection();
+}
+
+function fillModels(list) {
+  if (!list?.length) return;
+  const sel = $("#chatModel");
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Default model</option>';
+  for (const m of list) {
+    const o = document.createElement("option");
+    o.value = m;
+    o.textContent = m;
+    sel.append(o);
+  }
+  if ([...sel.options].some((o) => o.value === current)) sel.value = current;
+}
+
+async function openChat() {
+  const d = $("#chatDialog");
+  if (!d.open) d.showModal();
+  await loadChat();
+  setTimeout(() => $("#chatInput").focus(), 30);
+}
+
+async function loadChat() {
+  const r = await fetch("/api/chat").then((x) => x.json()).catch(() => null);
+  if (!r) return;
+  chat.state = r;
+  fillModels(r.models || []);
+  renderChat();
+}
+
+function connectChat() {
+  if (chat.es) chat.es.close();
+  chat.es = new EventSource("/api/chat/stream");
+  chat.es.onmessage = (e) => {
+    try { handleChatEvent(JSON.parse(e.data)); } catch { /* ignore a broken frame */ }
+  };
+}
+
+function handleChatEvent(ev) {
+  switch (ev.type) {
+    case "state":
+      chat.state = ev.state;
+      chat.currentAssistant = chat.state.running
+        ? [...chat.state.messages].reverse().find((m) => m.role === "assistant") || null
+        : null;
+      renderChat();
+      break;
+    case "user": {
+      const last = chat.state.messages[chat.state.messages.length - 1];
+      if (!last || last.role !== "user" || last.ts !== ev.message.ts || last.text !== ev.message.text) {
+        chat.state.messages.push(ev.message);
+      }
+      chat.currentAssistant = null;
+      renderChat();
+      break;
+    }
+    case "start":
+      chat.state.running = true;
+      chat.currentAssistant = null;
+      setChatWork("The Chair is working");
+      updateChatControls();
+      break;
+    case "session":
+      chat.state.sessionId = ev.sessionId;
+      renderSelection();
+      break;
+    case "step":
+      setChatWork(`The Chair is working · step ${ev.steps}`);
+      break;
+    case "text": {
+      if (!chat.currentAssistant) {
+        const last = chat.state.messages[chat.state.messages.length - 1];
+        if (last?.role === "assistant") chat.currentAssistant = last;
+        else {
+          chat.currentAssistant = { role: "assistant", text: "", ts: Date.now() };
+          chat.state.messages.push(chat.currentAssistant);
+        }
+      }
+      chat.currentAssistant.text = ev.text;
+      renderChat();
+      break;
+    }
+    case "tool":
+      setChatWork(toolLabel(ev));
+      break;
+    case "usage":
+      showChatUsage(ev);
+      break;
+    case "error":
+      toast(ev.error);
+      setChatWork(ev.error);
+      break;
+    case "done":
+      chat.state.running = false;
+      $("#chatWork").hidden = true;
+      updateChatControls();
+      setTimeout(watchForLive, 900);
+      break;
+    case "reset":
+      chat.state.messages = [];
+      chat.state.sessionId = null;
+      chat.currentAssistant = null;
+      selection.keys.clear();
+      selection.all = false;
+      renderChat();
+      renderSelection();
+      break;
+  }
+}
+
+function renderChat() {
+  const log = $("#chatLog");
+  const list = chat.state.messages || [];
+  log.innerHTML = "";
+  if (!list.length) {
+    const empty = document.createElement("div");
+    empty.className = "chat-empty";
+    empty.textContent = "Bring a decision. Try “Should I raise prices from $2,000 to $3,500?” Or ask one seat: “ask hormozi about our offer.”";
+    log.append(empty);
+  } else {
+    for (const m of list) {
+      const el = document.createElement("div");
+      el.className = "chat-msg " + (m.role === "user" ? "user" : "assistant");
+      const who = document.createElement("span");
+      who.className = "who";
+      who.textContent = m.role === "user" ? "You" : "Chair";
+      const body = document.createElement("span");
+      if (m.role === "user") body.textContent = m.text || "";
+      else body.innerHTML = chatHtml(m.text || "");
+      el.append(who, body);
+      log.append(el);
+    }
+  }
+  log.scrollTop = log.scrollHeight;
+  updateChatControls();
+}
+
+function chatHtml(text) {
+  return esc(text)
+    .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/^#{1,3} (.*)$/gm, "<strong>$1</strong>")
+    .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?]|$)/g, "$1<em>$2</em>");
+}
+
+function updateChatControls() {
+  const running = Boolean(chat.state.running);
+  $("#chatSend").disabled = running;
+  $("#chatInput").disabled = running;
+  $("#chatStop").hidden = !running;
+  $("#chatWork").hidden = !running;
+  $("#chatQuick").disabled = running;
+  $("#chatModel").disabled = running;
+  $("#chatAddAdvisor").disabled = running;
+  renderSelection();
+}
+
+function setChatWork(text) {
+  if (!text) return;
+  $("#chatWorkText").textContent = text;
+  $("#chatWork").hidden = false;
+}
+
+function showChatUsage(ev) {
+  const k = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n || 0));
+  const cost = Number(ev.cost) || 0;
+  $("#chatUsage").textContent = `$${cost.toFixed(4)} · ${k(ev.tokens?.input)} in / ${k(ev.tokens?.output)} out`;
+}
+
+function toolLabel(ev) {
+  if (ev.tool === "subagent") {
+    const key = String(ev.agent || "").replace(/^council-/, "");
+    const seat = state.byKey[key];
+    const name = seat?.short || key;
+    if (ev.status === "completed") return name ? `${name} has spoken` : "A seat has spoken";
+    return name ? `${name} is working` : "A seat is working";
+  }
+  if (ev.tool === "skill") return "Loading the skill";
+  if (ev.tool === "shell") return "Running a check";
+  if (ev.tool === "read" || ev.tool === "glob" || ev.tool === "grep") return "Reading the brief";
+  if (ev.tool === "edit" || ev.tool === "write") return "Writing the session";
+  if (ev.tool === "question") return "Waiting on you";
+  return "Working";
+}
+
+async function postChat(message, { quick = false, model = "", seats = [], all = false } = {}) {
+  $("#chatSend").disabled = true;
+  const r = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message, quick, model, seats, all }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    toast(j.error || "Could not start the council.");
+    await loadChat();
+    $("#chatSend").disabled = false;
+    return false;
+  }
+  $("#chatInput").value = "";
+  $("#chatInput").focus();
+  if (!chat.es || chat.es.readyState === 2) connectChat();
+  return true;
+}
+
+async function sendChat(e) {
+  e.preventDefault();
+  const message = $("#chatInput").value.trim();
+  if (!message) return;
+  await postChat(message, {
+    quick: $("#chatQuick").checked,
+    model: $("#chatModel").value,
+    seats: selectedSeats(),
+    all: selection.all,
+  });
+}
+
+function openAdvisor() {
+  if (chat.state.running) return toast("Stop the running council first.");
+  const seats = $("#seatsDialog");
+  if (seats.open) seats.close();
+  const d = $("#advisorDialog");
+  if (!d.open) d.showModal();
+  setTimeout(() => $("#advisorName").focus(), 30);
+}
+
+async function buildAdvisor(e) {
+  e.preventDefault();
+  const name = $("#advisorName").value.trim();
+  if (!name) return;
+  const pillar = $("#advisorPillar").value.trim();
+  const question = $("#advisorQuestion").value.trim();
+  const depth = $("#advisorDepth").value;
+  const onBoard = $("#advisorDefault").checked;
+  const message = [
+    `@new-thinker ${name}${depth ? " " + depth : ""}${onBoard ? " --default" : ""}`,
+    `Pillar: ${pillar || "Pick the sharpest fit from their public work."}`,
+    `Question the seat owns: ${question || "Pick the one decision question they are best at."}`,
+    "Use these details. Do not ask me questions; state any assumptions and proceed.",
+  ].join("\n");
+  $("#advisorBuild").disabled = true;
+  $("#advisorDialog").close();
+  if (chat.state.sessionId) await newChat();
+  if (!chat.es || chat.es.readyState === 2) connectChat();
+  const ok = await postChat(message, { model: $("#chatModel").value });
+  $("#advisorBuild").disabled = false;
+  if (ok) {
+    $("#advisorName").value = "";
+    $("#advisorPillar").value = "";
+    $("#advisorQuestion").value = "";
+    $("#advisorDefault").checked = false;
+    $("#advisorDepth").value = "";
+    if (!$("#chatDialog").open) $("#chatDialog").showModal();
+    toast("Building the advisor. This one takes a while.");
+  } else {
+    $("#advisorDialog").showModal();
+  }
+}
+
+async function stopChat() {
+  await fetch("/api/chat/stop", { method: "POST" }).catch(() => {});
+  toast("Stopping the council...");
+}
+
+async function newChat() {
+  if (chat.state.running) return toast("Stop the running council first.");
+  await fetch("/api/chat/reset", { method: "POST" }).catch(() => {});
+  chat.state.messages = [];
+  chat.state.sessionId = null;
+  chat.currentAssistant = null;
+  $("#chatUsage").textContent = "";
+  selection.keys.clear();
+  selection.all = false;
+  renderChat();
+  reset();
+  renderSelection();
 }
 
 // ------------------------------------------------------------- misc

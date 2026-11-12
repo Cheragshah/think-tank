@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Roast Room · AI Automation Society</title>
-  <link rel="icon" href="/brand/favicon-ais.png" type="image/png">
+  <meta name="description" content="Think Tank: a council of simulated advisors that pressure-tests a hard decision and returns a scored verdict.">
+  <title>Think Tank · A council for hard decisions</title>
+  <link rel="icon" href="/brand/think-tank-favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -13,9 +14,9 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <img class="brand-logo" src="/brand/ais-horizontal.svg" alt="AI Automation Society">
+      <img class="brand-logo" src="/brand/think-tank-mark.svg" alt="Think Tank">
       <span class="brand-rule" aria-hidden="true"></span>
-      <span class="brand-name">Roast Room</span>
+      <span class="brand-name">Think Tank</span>
     </div>
     <ol class="stepper" id="stepper" aria-label="Council progress">
       <li data-step="setup">Brief</li>
@@ -27,11 +28,30 @@
     </ol>
     <div class="top-actions">
       <span class="usage" id="usage" title="Tokens used by this app since it started"></span>
+      <button class="ghost" id="leadersBtn" type="button">Leaders <span class="leader-count" id="leadersCount">0</span></button>
+      <button class="ghost" id="chatBtn" type="button" hidden>Chat</button>
       <button class="ghost" id="guideBtn" type="button">How it works</button>
       <button class="ghost" id="historyBtn" type="button">Past sessions</button>
       <button class="ghost" id="newBtn" type="button" hidden>New question</button>
     </div>
   </header>
+
+  <div class="leaders-menu" id="leadersMenu" hidden>
+    <div class="leaders-head">
+      <div>
+        <h3>Leaders</h3>
+        <p id="leadersSummary">Loading the table</p>
+      </div>
+      <button class="ghost" id="leadersUse" type="button">Use in chat</button>
+    </div>
+    <label class="chat-seat-all"><input type="checkbox" id="leadersAll"> Everyone (up to 9)</label>
+    <div class="leaders-grid" id="leadersGrid"></div>
+    <form class="leaders-add" id="leaderAddForm">
+      <input id="leaderName" placeholder="Add a leader by name" autocomplete="off" required>
+      <button class="convene" type="submit" id="leaderAddBtn">Research &amp; add</button>
+    </form>
+    <p class="leaders-note">Just a name is enough. Deep research builds the profile in the background and replaces the provisional seat when it lands.</p>
+  </div>
 
   <div class="topic" id="topic" hidden>
     <div class="topic-main">
@@ -47,17 +67,17 @@
         <div class="wall" aria-hidden="true"></div>
         <div class="spot" id="spot" aria-hidden="true"></div>
         <div id="seats"></div>
-        <div class="table" id="table" aria-hidden="true"><img class="etch" src="/brand/ais-symbol.png" alt=""></div>
+        <div class="table" id="table" aria-hidden="true"><img class="etch" src="/brand/think-tank-symbol.svg" alt=""></div>
         <div id="plates"></div>
         <svg class="links" id="links" aria-hidden="true"></svg>
 
         <div class="center" id="center">
           <div class="waiting" id="waiting" hidden>
             <span class="pulse"><i></i>The room is open</span>
-            <h2 data-type>Bring a decision to the Roast Room</h2>
-            <p>In Claude Code, type the line below with your decision. The council shows up here and argues it out live.</p>
-            <code>/roast-room should I ...</code>
-            <div class="row"><button class="ghost" type="button" id="waitGuide">What to put in your question</button><button class="ghost" type="button" id="waitHistory">Watch a past council</button></div>
+            <h2 data-type>Bring a decision to the Think Tank</h2>
+            <p>Type a decision and the Tank convenes. The council shows up here and argues it out live.</p>
+            <code>/think-tank should I ... <span class="muted">(OpenCode: @think-tank)</span></code>
+            <div class="row"><button class="convene" type="button" id="waitChat" hidden>Chat with the Chair</button><button class="ghost" type="button" id="waitGuide">What to put in your question</button><button class="ghost" type="button" id="waitHistory">Watch a past council</button></div>
           </div>
 
           <form class="composer" id="composer" hidden>
@@ -135,6 +155,72 @@
     <p class="muted">Replay a council exactly as it happened.</p>
     <ul class="history" id="historyList"></ul>
     <form method="dialog"><button class="ghost">Close</button></form>
+  </dialog>
+
+  <dialog id="chatDialog" class="card-dialog chat-dialog">
+    <div class="chat-head">
+      <div>
+        <h3>Chat with the Chair</h3>
+        <p class="muted" id="chatSub">Type a decision. The Chair convenes the council and the room plays it live.</p>
+      </div>
+      <form method="dialog"><button class="ghost">Close</button></form>
+    </div>
+    <div class="chat-log" id="chatLog" aria-live="polite"></div>
+    <div class="chat-work" id="chatWork" hidden>
+      <span class="dots"><i></i><i></i><i></i></span>
+      <span id="chatWorkText">The Chair is working</span>
+      <span class="chat-usage" id="chatUsage"></span>
+    </div>
+    <form class="chat-form" id="chatForm">
+      <button class="chat-select" id="chatSeatBtn" type="button">
+        <span class="chat-select-main"><span class="chat-select-icon">＋</span> Who should we select?</span>
+        <span class="chat-select-badge" id="chatSeatCount">Recommended</span>
+      </button>
+      <p class="chat-select-note" id="chatSeatHint">The Chair recommends a board for the topic.</p>
+      <textarea id="chatInput" rows="2" placeholder="Should I raise prices from $2,000 to $3,500?" required></textarea>
+      <div class="chat-row">
+        <label class="chat-check"><input type="checkbox" id="chatQuick"> Quick council</label>
+        <select id="chatModel" title="Model"><option value="">Default model</option></select>
+        <span class="chat-spacer"></span>
+        <button class="ghost" type="button" id="chatStop" hidden>Stop</button>
+        <button class="convene" type="submit" id="chatSend">Send</button>
+      </div>
+    </form>
+    <div class="chat-foot">
+      <span>First message starts a council. Follow-ups continue the same conversation.</span>
+      <span class="chat-foot-actions"><button class="ghost" type="button" id="chatWatch">Watch the room</button><button class="ghost" type="button" id="chatNew">New question</button></span>
+    </div>
+  </dialog>
+
+  <dialog id="seatsDialog" class="card-dialog seats-dialog">
+    <h3>Who should we select?</h3>
+    <p class="muted">Pick the leaders you want in the room. Leave it empty and the Chair recommends a board for the decision.</p>
+    <label class="chat-seat-all"><input type="checkbox" id="chatSeatAll"> Everyone (up to 9)</label>
+    <div class="chat-seat-grid" id="chatSeatGrid"></div>
+    <div class="seats-actions">
+      <button class="ghost" type="button" id="chatSeatClear">Clear</button>
+      <button class="ghost" type="button" id="chatAddAdvisor">+ Build a new advisor</button>
+      <button class="convene" type="button" id="chatSeatDone">Use these leaders</button>
+    </div>
+    <p class="chat-picker-note">A full council is about 3 subagent runs per leader; Quick uses 4 leaders and 2 rounds.</p>
+  </dialog>
+
+  <dialog id="advisorDialog" class="card-dialog advisor-dialog">
+    <h3>Build a new advisor</h3>
+    <p class="muted">Adds a seat from the person's public work. This runs the new-thinker skill and can take a while.</p>
+    <form class="advisor-form" id="advisorForm">
+      <label>Full name<input id="advisorName" required placeholder="Morgan Housel"></label>
+      <label>Pillar<input id="advisorPillar" placeholder="Psychology of money and long-term thinking"></label>
+      <label>Question the seat owns<input id="advisorQuestion" placeholder="Will this compound, or cost you your independence?"></label>
+      <div class="advisor-row">
+        <label>Depth<select id="advisorDepth"><option value="--quick">Quick</option><option value="" selected>Standard</option><option value="--deep">Deep</option></select></label>
+        <label class="chat-check"><input type="checkbox" id="advisorDefault"> Put on the default board</label>
+      </div>
+      <div class="advisor-actions">
+        <button class="ghost" type="button" id="advisorCancel">Cancel</button>
+        <button class="convene" type="submit" id="advisorBuild">Build advisor</button>
+      </div>
+    </form>
   </dialog>
 
   <div class="toast" id="toast" hidden></div>

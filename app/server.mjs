@@ -1,21 +1,30 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { APP_ROOT, env } from "./lib/env.mjs";
 import { loadRoster, BOARD } from "./lib/seats.mjs";
 import { startCouncil, getSession, subscribe, listSaved, loadSaved, MODELS } from "./lib/council.mjs";
 import { usage } from "./lib/anthropic.mjs";
 import * as watch from "./lib/watch.mjs";
+import * as chat from "./lib/opencode.mjs";
+import * as leaderBuilds from "./lib/leader-builds.mjs";
 
 const PORT = Number(process.env.PORT) || 4730;
+const HOST = process.env.HOST || (process.env.RENDER ? "0.0.0.0" : "127.0.0.1");
+const APP_PASSWORD = process.env.APP_PASSWORD || env("APP_PASSWORD") || "";
+const APP_USER = process.env.APP_USER || env("APP_USER") || "think-tank";
 const PUBLIC = path.join(APP_ROOT, "public");
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".ico": "image/x-icon", ".json": "application/json", ".ttf": "font/ttf", ".txt": "text/plain; charset=utf-8" };
 
 let running = null; // one council at a time (API runner)
 
-// "viewer" (default): the room plays councils that /roast-room runs in Claude Code.
+// "opencode" (default when the CLI is installed): the room chats with OpenCode,
+// which runs the council and writes the session folder.
 // "api": the room can also run councils itself on ANTHROPIC_API_KEY (COUNCIL_RUNNER=api in .env).
-const RUNNER = (process.env.COUNCIL_RUNNER || env("COUNCIL_RUNNER") || "viewer").toLowerCase() === "api" ? "api" : "viewer";
+// "viewer": only watch councils started elsewhere.
+const CONFIGURED = (process.env.COUNCIL_RUNNER || env("COUNCIL_RUNNER") || "").toLowerCase();
+const RUNNER = CONFIGURED === "api" ? "api" : CONFIGURED === "viewer" ? "viewer" : chat.hasOpencode() ? "opencode" : "viewer";
 watch.startWatching();
 
 function send(res, code, body, type = "application/json") {
@@ -29,19 +38,74 @@ async function readJson(req) {
   return raw ? JSON.parse(raw) : {};
 }
 
+const same = (a, b) => {
+  const aa = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  return aa.length === bb.length && crypto.timingSafeEqual(aa, bb);
+};
+
+function authorized(req) {
+  if (!APP_PASSWORD) return true;
+  const header = req.headers.authorization || "";
+  if (!header.startsWith("Basic ")) return false;
+  let decoded = "";
+  try { decoded = Buffer.from(header.slice(6), "base64").toString("utf8"); } catch { return false; }
+  const at = decoded.indexOf(":");
+  if (at < 0) return false;
+  return same(decoded.slice(0, at), APP_USER) && same(decoded.slice(at + 1), APP_PASSWORD);
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const p = url.pathname;
   try {
+    if (p === "/healthz") return send(res, 200, "ok", "text/plain");
+    if (!authorized(req)) {
+      res.writeHead(401, {
+        "www-authenticate": 'Basic realm="Think Tank", charset="UTF-8"',
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      return res.end("Authentication required");
+    }
     if (p === "/api/seats") {
       // portraits: which of the four mouth shapes exist for each seat (a seat with none gets a drawn bust)
       const frame = (key, sh) => ["webp", "png", "jpg"].map((x) => `${key}-${sh}.${x}`).find((f) => fs.existsSync(path.join(PUBLIC, "portraits", f)));
       const seats = loadRoster().map((s) => ({ ...s, portraits: Object.fromEntries(["base", "open", "mid", "blink"].map((sh) => [sh, frame(s.key, sh)]).filter(([, f]) => f).map(([sh, f]) => [sh, `/portraits/${f}`])) }));
-      return send(res, 200, { seats, board: BOARD, models: MODELS, runner: RUNNER, hasKey: Boolean(env("ANTHROPIC_API_KEY")) });
+      return send(res, 200, { seats, board: BOARD, models: MODELS, runner: RUNNER, hasKey: Boolean(env("ANTHROPIC_API_KEY")), chatModels: RUNNER === "opencode" ? chat.models() : [], jobs: leaderBuilds.jobsState() });
     }
     if (p === "/api/usage") return send(res, 200, usage);
+    if (p === "/api/chat" && req.method === "GET") return send(res, 200, chat.state());
+    if (p === "/api/chat" && req.method === "POST") {
+      if (RUNNER !== "opencode") return send(res, 403, { error: "The room is not in OpenCode chat mode. Set COUNCIL_RUNNER=opencode in .env and restart." });
+      const { message, model, quick, seats, all } = await readJson(req);
+      try {
+        chat.send(message, { model, quick: Boolean(quick), seats, all: Boolean(all) });
+        return send(res, 200, { ok: true });
+      } catch (e) {
+        return send(res, 400, { error: String(e.message || e) });
+      }
+    }
+    if (p === "/api/chat/stream") return chat.subscribe(req, res);
+    if (p === "/api/chat/stop" && req.method === "POST") { chat.stop(); return send(res, 200, { ok: true }); }
+    if (p === "/api/chat/reset" && req.method === "POST") {
+      try { chat.reset(); return send(res, 200, { ok: true }); }
+      catch (e) { return send(res, 409, { error: String(e.message || e) }); }
+    }
+    if (p === "/api/leaders" && req.method === "GET") return send(res, 200, { jobs: leaderBuilds.jobsState() });
+    if (p === "/api/leaders" && req.method === "POST") {
+      if (RUNNER !== "opencode") return send(res, 403, { error: "Switch the room to OpenCode chat mode to add leaders." });
+      const { name } = await readJson(req);
+      try {
+        const result = await leaderBuilds.addLeader(name);
+        if (result.built) return send(res, 409, { error: `${result.seat.name} is already built.`, seat: result.seat });
+        return send(res, 200, { seat: result.seat, job: result.job, existed: result.existed, avatar: Boolean(result.avatar) });
+      } catch (e) {
+        return send(res, 400, { error: String(e.message || e) });
+      }
+    }
     if (p === "/api/council" && req.method === "POST") {
-      if (RUNNER !== "api") return send(res, 403, { error: "This room is a viewer. Run /roast-room in Claude Code, or set COUNCIL_RUNNER=api in .env." });
+      if (RUNNER !== "api") return send(res, 403, { error: "This room is a viewer. Run /think-tank in Claude Code (or @think-tank in OpenCode), or set COUNCIL_RUNNER=api in .env." });
       if (running && getSession(running)?.status === "running") return send(res, 409, { error: "A council is already in session. Wait for its verdict." });
       const { prompt, mode } = await readJson(req);
       if (!prompt || prompt.trim().length < 10) return send(res, 400, { error: "Give the council a real decision (at least a sentence)." });
@@ -80,4 +144,4 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, "127.0.0.1", () => console.log(`Roast Room on http://localhost:${PORT} (${RUNNER === "api" ? "viewer + API runner" : "viewer: run /roast-room in Claude Code"})`));
+server.listen(PORT, HOST, () => console.log(`Think Tank on http://${HOST}:${PORT} (${RUNNER === "api" ? "viewer + API runner" : RUNNER === "opencode" ? "chat + OpenCode runner" : "viewer: run /think-tank in Claude Code or @think-tank in OpenCode"})`));

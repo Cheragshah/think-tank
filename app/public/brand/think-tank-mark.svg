@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Think Tank T2 mark">
+  <defs>
+    <linearGradient id="tt-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#171B24"/>
+      <stop offset="1" stop-color="#080A0F"/>
+    </linearGradient>
+    <radialGradient id="tt-glow" cx="0.72" cy="0.18" r="0.75">
+      <stop offset="0" stop-color="#D6FF3F" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#D6FF3F" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="15.5" fill="url(#tt-bg)" stroke="#D6FF3F" stroke-width="2"/>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="15.5" fill="url(#tt-glow)"/>
+  <path d="M12 16h24v8H28v24h-8V24H12z" fill="#D6FF3F"/>
+  <path d="M38 22c0-4 3-7 8-7s8 3 8 7c0 3-1.6 5.4-4.6 8.2L43 36h11v7H37v-6l10-8.4c1.7-1.5 2.6-2.6 2.6-4.1 0-1.8-1.4-3-3.6-3s-3.6 1.2-3.6 3z" fill="#F7F5EE"/>
+  <circle cx="49.5" cy="15.5" r="2.2" fill="#D6FF3F"/>
+</svg>

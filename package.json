@@ -1,12 +1,14 @@
 {
-  "name": "roast-room",
+  "name": "think-tank",
   "version": "1.0.0",
   "private": true,
-  "description": "The Roast Room: eleven AI advisors built from the public work of Bezos, Paul Graham, Hormozi, Gary Vaynerchuk, Dan Martell, Gino Wickman, Buffett, Naval Ravikant, Codie Sanchez, Leila Hormozi, and Sara Blakely (plus any you add with /newroaster) debate your decision in Claude Code, live around a table.",
+  "description": "Think Tank: a council of simulated advisors built from public work debates a hard decision in OpenCode or Claude Code, with a live table and a scored verdict. Twelve core seats plus seven provisional seats (Modi, Ambani, Kamath, Bartlett, Robbins, Dispenza, Demartini).",
   "type": "module",
   "scripts": {
     "start": "node app/server.mjs",
-    "smoke": "node app/scripts/smoke.mjs"
+    "smoke": "node app/scripts/smoke.mjs",
+    "opencode:sync": "node scripts/sync-opencode-agents.mjs",
+    "opencode:check": "node scripts/sync-opencode-agents.mjs --check"
   },
   "engines": { "node": ">=20" }
 }

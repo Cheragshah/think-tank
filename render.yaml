@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: think-tank
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /healthz
+    autoDeploy: true
+    disk:
+      name: think-tank-data
+      mountPath: /data
+      sizeGB: 5
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_USER
+        value: think-tank
+      - key: APP_PASSWORD
+        sync: false
+      - key: LEADER_MODEL
+        value: deepseek/deepseek-v4-pro
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: KIE_AI_API_KEY
+        sync: false
